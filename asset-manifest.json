@@ -1,16 +1,16 @@
 {
   "files": {
-    "main.css": "/Qraft/static/css/main.ff0c55d1.css",
-    "main.js": "/Qraft/static/js/main.ba0d19ca.js",
+    "main.css": "/Qraft/static/css/main.06e15b46.css",
+    "main.js": "/Qraft/static/js/main.6153ca0b.js",
     "static/js/453.23ca7f2e.chunk.js": "/Qraft/static/js/453.23ca7f2e.chunk.js",
     "static/media/logo.png": "/Qraft/static/media/logo.9f7c2163469507c86798.png",
     "index.html": "/Qraft/index.html",
-    "main.ff0c55d1.css.map": "/Qraft/static/css/main.ff0c55d1.css.map",
-    "main.ba0d19ca.js.map": "/Qraft/static/js/main.ba0d19ca.js.map",
+    "main.06e15b46.css.map": "/Qraft/static/css/main.06e15b46.css.map",
+    "main.6153ca0b.js.map": "/Qraft/static/js/main.6153ca0b.js.map",
     "453.23ca7f2e.chunk.js.map": "/Qraft/static/js/453.23ca7f2e.chunk.js.map"
   },
   "entrypoints": [
-    "static/css/main.ff0c55d1.css",
-    "static/js/main.ba0d19ca.js"
+    "static/css/main.06e15b46.css",
+    "static/js/main.6153ca0b.js"
   ]
 }
