@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/qraft/static/css/main.469d092f.css",
+    "main.js": "/qraft/static/js/main.4eb6a3c8.js",
+    "static/js/453.23ca7f2e.chunk.js": "/qraft/static/js/453.23ca7f2e.chunk.js",
+    "index.html": "/qraft/index.html",
+    "main.469d092f.css.map": "/qraft/static/css/main.469d092f.css.map",
+    "main.4eb6a3c8.js.map": "/qraft/static/js/main.4eb6a3c8.js.map",
+    "453.23ca7f2e.chunk.js.map": "/qraft/static/js/453.23ca7f2e.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.469d092f.css",
+    "static/js/main.4eb6a3c8.js"
+  ]
+}
