@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>QRaft</title>
+    <script>
+      // GitHub Pages SPA redirect hack
+      // Stores the path in sessionStorage and redirects to index.html
+      var path = window.location.pathname;
+      var search = window.location.search;
+      sessionStorage.setItem('redirect', path + search);
+      window.location.replace('/Qraft/');
+    </script>
+  </head>
+  <body>Redirecting…</body>
+</html>
