@@ -183,12 +183,6 @@ function AuthModal({ dm, onClose }) {
       onToggleDark={() => setDarkMode(!darkMode)}
     />
   );
-
-  const handleGetStarted = () => {
-    localStorage.setItem("qraft_visited", "1");
-    setShowLanding(false);
-  };
-
   // ── Render landing page for first-time visitors ────────────────────────────
   if (showLanding) return (
     <Landing
