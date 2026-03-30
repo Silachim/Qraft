@@ -4,8 +4,7 @@ import {
   FileText, Upload, X, Moon, Sun, Share2, Sliders, Palette,
   Wifi, Mail, Printer, Lock, Unlock, Maximize2,
   ChevronDown, ChevronUp, History, Grid, LogIn, LogOut,
-  UserCircle, RefreshCw, Trash2, Edit2, LayoutDashboard,
-  Plus, BarChart2
+  RefreshCw, Trash2, Edit2, LayoutDashboard, Plus, BarChart2
 } from "lucide-react";
 import logo from "./logo.png";
 import { auth, db, googleProvider } from "./firebase";
@@ -17,8 +16,10 @@ import {
   collection, addDoc, getDocs, updateDoc, deleteDoc,
   doc, query, where, orderBy, serverTimestamp, increment
 } from "firebase/firestore";
-import Analytics from "./Analytics";
-import Redirect  from "./Redirect";
+import Analytics   from "./Analytics";
+import Redirect    from "./Redirect";
+import Landing     from "./Landing";
+import { ToastProvider, toast } from "./Toast";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const SHORT_BASE = window.location.origin + "/r/";
@@ -169,6 +170,19 @@ function AuthModal({ dm, onClose }) {
     catch(e) { setError(e.message); }
     finally { setLoading(false); }
   };
+
+  const handleGetStarted = () => {
+    localStorage.setItem("qraft_visited", "1");
+    setShowLanding(false);
+  };
+
+  if (showLanding) return (
+    <Landing
+      dm={darkMode}
+      onGetStarted={handleGetStarted}
+      onToggleDark={() => setDarkMode(!darkMode)}
+    />
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
@@ -386,7 +400,12 @@ export default function QRaft() {
   const rIdx      = pathParts.indexOf("r");
   const shortId   = rIdx !== -1 ? pathParts[rIdx + 1] || null : null;
   if (shortId) return <Redirect shortId={shortId}/>;
-  return <QRaftApp/>;
+  return (
+    <>
+      <ToastProvider/>
+      <QRaftApp/>
+    </>
+  );
 }
 
 // ── Main App ──────────────────────────────────────────────────────────────────
@@ -540,24 +559,25 @@ function QRaftApp() {
 
   // ── Save Dynamic QR to Firestore ───────────────────────────────────────────
   const saveDynamicQR = async () => {
-    if(!user){ setShowAuth(true); return; }
+    if(!user){ setShowAuth(true); toast.info("Please sign in to save dynamic QR codes"); return; }
     const raw = buildData();
-    if(!raw){ alert("Please fill in the form first."); return; }
+    if(!raw){ toast.error("Please fill in the form first."); return; }
     setSavingDynamic(true);
     try {
       const shortId = genId();
       const docRef = await addDoc(collection(db,"qrcodes"),{
-        uid:         user.uid,
-        shortId,
+        uid: user.uid, shortId,
         destination: raw,
-        label:       dynamicLabel || "Untitled QR",
-        scans:       0,
-        qrColor, qrBg, qrShape,
-        createdAt:   serverTimestamp(),
-        updatedAt:   serverTimestamp(),
+        label: dynamicLabel || "Untitled QR",
+        scans: 0, qrColor, qrBg, qrShape,
+        createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
       });
       setSavedDynamic({ id:docRef.id, shortId, destination:raw });
-    } catch(e){ console.error(e); alert("Failed to save. Check Firestore rules."); }
+      toast.success("Dynamic QR saved! Edit it anytime from My QR Codes.");
+    } catch(e){
+      console.error(e);
+      toast.error("Failed to save. Check your connection and try again.");
+    }
     finally{ setSavingDynamic(false); }
   };
 
@@ -575,10 +595,32 @@ function QRaftApp() {
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const getCanvas=()=>qrRef.current?.querySelector("canvas");
-  const downloadQR=()=>{const c=getCanvas();if(!c)return;const a=document.createElement("a");a.download=`qraft-${activeTab}.png`;a.href=c.toDataURL("image/png");a.click();};
-  const printQR=()=>{const c=getCanvas();if(!c)return;const w=window.open("","_blank");w.document.write(`<!DOCTYPE html><html><head><title>QRaft</title><style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;}img{max-width:300px;}h2{margin-top:12px;}button{margin-top:16px;padding:8px 24px;cursor:pointer;}@media print{button{display:none;}}</style></head><body><img src="${c.toDataURL()}"/><h2>QRaft</h2><button onclick="window.print()">Print</button></body></html>`);w.document.close();setTimeout(()=>w.print(),500);};
-  const shareQR=async()=>{const c=getCanvas();if(!c)return;c.toBlob(async(blob)=>{const file=new File([blob],"qraft-qr.png",{type:"image/png"});if(navigator.canShare?.({files:[file]})){try{await navigator.share({title:"QRaft QR Code",files:[file]});return;}catch{}}await navigator.clipboard.writeText(window.location.href);setShareMsg("Copied!");setTimeout(()=>setShareMsg(""),2000);});};
-  const copyData=async()=>{if(!qrData)return;await navigator.clipboard.writeText(qrData);setCopied(true);setTimeout(()=>setCopied(false),2000);};
+  const downloadQR=()=>{
+    const c=getCanvas();if(!c){toast.error("No QR code to download yet!");return;}
+    const a=document.createElement("a");a.download=`qraft-${activeTab}.png`;a.href=c.toDataURL("image/png");a.click();
+    toast.success("QR code downloaded!");
+  };
+  const printQR=()=>{
+    const c=getCanvas();if(!c){toast.error("No QR code to print yet!");return;}
+    const w=window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>QRaft</title><style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;}img{max-width:300px;}h2{margin-top:12px;}button{margin-top:16px;padding:8px 24px;cursor:pointer;}@media print{button{display:none;}}</style></head><body><img src="${c.toDataURL()}"/><h2>QRaft</h2><button onclick="window.print()">Print</button></body></html>`);
+    w.document.close();setTimeout(()=>w.print(),500);
+  };
+  const shareQR=async()=>{
+    const c=getCanvas();if(!c){toast.error("No QR code to share yet!");return;}
+    c.toBlob(async(blob)=>{
+      const file=new File([blob],"qraft-qr.png",{type:"image/png"});
+      if(navigator.canShare?.({files:[file]})){try{await navigator.share({title:"QRaft QR Code",files:[file]});toast.success("Shared!");return;}catch{}}
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copied to clipboard!");
+    });
+  };
+  const copyData=async()=>{
+    if(!qrData){toast.error("No QR data to copy!");return;}
+    await navigator.clipboard.writeText(qrData);
+    toast.success("QR data copied!");
+    setCopied(true);setTimeout(()=>setCopied(false),2000);
+  };
   const resetForm=()=>{
     setUrlInput("");setTextInput("");
     setContact({firstName:"",lastName:"",phone:"",email:"",organization:"",url:""});
@@ -590,8 +632,19 @@ function QRaftApp() {
     setIsDynamic(false);setDynamicLabel("");setSavedDynamic(null);
     setQrData("");if(qrRef.current)qrRef.current.innerHTML="";
     if(fileRef.current)fileRef.current.value="";
+    toast.info("All fields cleared.");
   };
-  const applyTemplate=t=>{setQrColor(t.fg);setQrBg(t.bg);setQrShape(t.shape);setActiveTemplate(t.id);};
+  const applyTemplate = t => {
+    setQrColor(t.fg); setQrBg(t.bg); setQrShape(t.shape);
+    setActiveTemplate(t.id);
+    // Force QR redraw with new colors
+    const raw = buildData();
+    if (raw) {
+      const final = usePassword && qrPassword ? `${raw}|PWD:${qrPassword}` : raw;
+      setTimeout(() => drawQR(final, qrRef.current), 50);
+    }
+    toast.success(`Template "${t.label}" applied!`);
+  };
 
   // ── Styles ─────────────────────────────────────────────────────────────────
   const bg      = dm?"bg-[#0a0a14]":"bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-100";
@@ -848,7 +901,17 @@ function QRaftApp() {
       {/* Mobile bottom nav */}
       <div className={`fixed bottom-0 left-0 right-0 sm:hidden z-40 backdrop-blur-md ${dm?"bg-[#12121f]/95 border-t border-white/10":"bg-white/95 border-t border-gray-200"}`}>
         <nav className="flex justify-around px-1 py-1.5">
-          {TABS.map(({id,label,icon:Icon})=>(<button key={id} onClick={()=>setActiveTab(id)} className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all ${activeTab===id?dm?"text-cyan-400 bg-cyan-400/10":"text-purple-600 bg-purple-50":dm?"text-gray-600":"text-gray-400"}`}><Icon className="w-5 h-5"/><span className="text-[9px] font-semibold">{label}</span></button>))}
+          {TABS.map(({id,label,icon:Icon})=>(
+            <button key={id} onClick={()=>setActiveTab(id)}
+              className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all duration-200 relative ${activeTab===id?dm?"text-cyan-400 bg-cyan-400/10":"text-purple-600 bg-purple-50":dm?"text-gray-600":"text-gray-400"}`}>
+              <Icon className="w-5 h-5"/>
+              <span className="text-[9px] font-semibold">{label}</span>
+              {/* Active indicator dot */}
+              {activeTab===id && (
+                <span className={`absolute -top-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full ${dm?"bg-cyan-400":"bg-purple-600"}`}/>
+              )}
+            </button>
+          ))}
         </nav>
       </div>
     </div>
