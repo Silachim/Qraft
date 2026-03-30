@@ -1,4 +1,4 @@
-// src/redirect.js
+// src/Redirect.js
 // Handles /r/:shortId — logs scan to Firestore then redirects
 import { useEffect, useState } from "react";
 import { db } from "./firebase";
@@ -101,7 +101,7 @@ export default function Redirect({ shortId }) {
       flexDirection: "column", alignItems: "center", justifyContent: "center",
       fontFamily: "sans-serif", color: "#fff", padding: 24,
     }}>
-      {status === "redirecting" && (
+      {status === "loading" && (
         <>
           <div style={{ width: 48, height: 48, border: "3px solid #00f5ff33",
             borderTop: "3px solid #00f5ff", borderRadius: "50%",
@@ -118,7 +118,7 @@ export default function Redirect({ shortId }) {
             WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
             QRaft
           </h2>
-          <p style={{ color: "#9ca3af", fontSize: 15, marginBottom: 8 }}>redirecting you to:</p>
+          <p style={{ color: "#9ca3af", fontSize: 15, marginBottom: 8 }}>Redirecting you to:</p>
           <p style={{ color: "#00f5ff", fontSize: 13, wordBreak: "break-all",
             maxWidth: 320, textAlign: "center", fontFamily: "monospace" }}>{dest}</p>
         </>

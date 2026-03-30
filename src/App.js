@@ -18,7 +18,7 @@ import {
   doc, query, where, orderBy, serverTimestamp, increment
 } from "firebase/firestore";
 import Analytics from "./Analytics";
-import Redirect  from "./redirect";
+import Redirect from "./redirect";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const SHORT_BASE = window.location.origin + "/r/";
