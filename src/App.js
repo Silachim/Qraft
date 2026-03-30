@@ -148,7 +148,7 @@ function AuthModal({ dm, onClose }) {
   const [password, setPassword] = useState("");
   const [error,    setError]    = useState("");
   const [loading,  setLoading]  = useState(false);
-
+  
   const card    = dm?"bg-[#12121f] border border-white/10":"bg-white border border-gray-200";
   const inp     = `w-full px-4 py-3 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${dm?"bg-[#1a1a2e] border-white/10 text-white placeholder-gray-600":"bg-white border-gray-200 text-gray-900"}`;
   const txt     = dm?"text-white":"text-gray-900";
@@ -239,7 +239,7 @@ function Dashboard({ user, dm, onClose, onEdit }) {
   const [editLabel, setEditLabel] = useState("");
   const [saving,    setSaving]    = useState(false);
   const [deleting,  setDeleting]  = useState(null);
-
+  
   const card    = dm?"bg-[#12121f] border border-white/10":"bg-white border border-gray-200";
   const rowBg   = dm?"bg-[#1a1a2e] border border-white/5":"bg-gray-50 border border-gray-100";
   const txt     = dm?"text-white":"text-gray-900";
@@ -418,13 +418,17 @@ export default function QRaft() {
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 function QRaftApp() {
-  const TABS=[
-    {id:"url",     label:"URL",     icon:Link},
-    {id:"text",    label:"Text",    icon:MessageSquare},
-    {id:"contact", label:"Contact", icon:User},
-    {id:"wifi",    label:"WiFi",    icon:Wifi},
-    {id:"email",   label:"Email",   icon:Mail},
-    {id:"file",    label:"File",    icon:FileText},
+  // These MUST be here
+  const [showLanding, setShowLanding] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
+
+  const TABS = [
+    { id: "url",     label: "URL",     icon: Link },
+    { id: "text",    label: "Text",    icon: MessageSquare },
+    { id: "contact", label: "Contact", icon: User },
+    { id: "wifi",    label: "WiFi",    icon: Wifi },
+    { id: "email",   label: "Email",   icon: Mail },
+    { id: "file",    label: "File",    icon: FileText },
   ];
 
   // ── Auth state ─────────────────────────────────────────────────────────────
