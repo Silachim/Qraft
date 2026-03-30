@@ -184,6 +184,20 @@ function AuthModal({ dm, onClose }) {
     />
   );
 
+  const handleGetStarted = () => {
+    localStorage.setItem("qraft_visited", "1");
+    setShowLanding(false);
+  };
+
+  // ── Render landing page for first-time visitors ────────────────────────────
+  if (showLanding) return (
+    <Landing
+      dm={darkMode}
+      onGetStarted={handleGetStarted}
+      onToggleDark={() => setDarkMode(!darkMode)}
+    />
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div className={`${card} rounded-3xl p-6 w-full max-w-sm shadow-2xl`} onClick={e=>e.stopPropagation()}>
