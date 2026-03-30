@@ -4,7 +4,8 @@ import {
   FileText, Upload, X, Moon, Sun, Share2, Sliders, Palette,
   Wifi, Mail, Printer, Lock, Unlock, Maximize2,
   ChevronDown, ChevronUp, History, Grid, LogIn, LogOut,
-  UserCircle, RefreshCw, Trash2, Edit2, LayoutDashboard, Plus
+  UserCircle, RefreshCw, Trash2, Edit2, LayoutDashboard,
+  Plus, BarChart2
 } from "lucide-react";
 import logo from "./logo.png";
 import { auth, db, googleProvider } from "./firebase";
@@ -14,8 +15,10 @@ import {
 } from "firebase/auth";
 import {
   collection, addDoc, getDocs, updateDoc, deleteDoc,
-  doc, query, where, orderBy, serverTimestamp, increment, getDoc
+  doc, query, where, orderBy, serverTimestamp, increment
 } from "firebase/firestore";
+import Analytics from "./Analytics";
+import Redirect  from "./redirect";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const SHORT_BASE = window.location.origin + "/r/";
@@ -81,13 +84,57 @@ async function getQRMatrix(text,size){
   return{modules};
 }
 
-// ── File upload ───────────────────────────────────────────────────────────────
-const FILE_HOSTS=[
-  async f=>{const form=new FormData();form.append("file",f);const res=await fetch("https://file.io/?expires=1w",{method:"POST",body:form,headers:{"Accept":"application/json"}});if(!res.ok)throw new Error(`HTTP ${res.status}`);const j=await res.json();if(j.success&&j.link)return j.link;throw new Error(j.message||"No link");},
-  async f=>{const form=new FormData();form.append("file",f);const res=await fetch("https://tmpfiles.org/api/v1/upload",{method:"POST",body:form});if(!res.ok)throw new Error(`HTTP ${res.status}`);const j=await res.json();if(j.status==="success"&&j.data?.url)return j.data.url.replace("tmpfiles.org/","tmpfiles.org/dl/");throw new Error("Failed");},
+// ── File Upload Helpers ───────────────────────────────────────────────────────
+const FILE_HOSTS = [
+  // Host 1: file.io
+  async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("https://file.io/?expires=1w", {
+      method: "POST", body: form, headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) throw new Error(`file.io HTTP ${res.status}`);
+    const j = await res.json();
+    if (j.success && j.link) return j.link;
+    throw new Error(j.message || "file.io: no link");
+  },
+  // Host 2: 0x0.st
+  async (file) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch("https://0x0.st", { method: "POST", body: form });
+    if (!res.ok) throw new Error(`0x0.st HTTP ${res.status}`);
+    const url = (await res.text()).trim();
+    if (url.startsWith("http")) return url;
+    throw new Error("0x0.st: invalid response");
+  },
+  // Host 3: litterbox (catbox) — up to 1GB, 24h
+  async (file) => {
+    const form = new FormData();
+    form.append("reqtype", "fileupload");
+    form.append("time",    "24h");
+    form.append("fileToUpload", file);
+    const res = await fetch("https://litterbox.catbox.moe/resources/internals/api.php", {
+      method: "POST", body: form,
+    });
+    if (!res.ok) throw new Error(`litterbox HTTP ${res.status}`);
+    const url = (await res.text()).trim();
+    if (url.startsWith("http")) return url;
+    throw new Error("litterbox: invalid response");
+  },
 ];
-async function uploadFile(file,onProg){
-  for(let i=0;i<FILE_HOSTS.length;i++){try{onProg?.(`Trying host ${i+1}/${FILE_HOSTS.length}…`);return await FILE_HOSTS[i](file);}catch(e){if(i===FILE_HOSTS.length-1)throw new Error("All upload hosts failed. Check your internet connection.");}}
+
+async function uploadFile(file, onProgress) {
+  const errors = [];
+  for (let i = 0; i < FILE_HOSTS.length; i++) {
+    try {
+      onProgress?.(`Uploading… (attempt ${i + 1}/${FILE_HOSTS.length})`);
+      return await FILE_HOSTS[i](file);
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  throw new Error("All upload hosts failed: " + errors.join(" | "));
 }
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
@@ -188,7 +235,7 @@ function Dashboard({ user, dm, onClose, onEdit }) {
     finally { setLoading(false); }
   };
 
-  useEffect(()=>{ fetchCodes(); },[]);
+  useEffect(() => { fetchCodes(); }, [fetchCodes]);
 
   const saveEdit = async () => {
     if(!editUrl.trim()) return;
@@ -332,8 +379,18 @@ function FullscreenQR({ qrData, qrColor, qrBg, qrShape, embedLogo, onClose }) {
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
+// ── Router ────────────────────────────────────────────────────────────────────
 export default function QRaft() {
+  const path      = window.location.pathname;
+  const pathParts = path.split("/").filter(Boolean);
+  const rIdx      = pathParts.indexOf("r");
+  const shortId   = rIdx !== -1 ? pathParts[rIdx + 1] || null : null;
+  if (shortId) return <Redirect shortId={shortId}/>;
+  return <QRaftApp/>;
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function QRaftApp() {
   const TABS=[
     {id:"url",     label:"URL",     icon:Link},
     {id:"text",    label:"Text",    icon:MessageSquare},
@@ -347,6 +404,8 @@ export default function QRaft() {
   const [user,          setUser]          = useState(null);
   const [showAuth,      setShowAuth]      = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [qrCodes,       setQrCodes]       = useState([]);
 
   // ── QR state ───────────────────────────────────────────────────────────────
   const [activeTab,      setActiveTab]      = useState("url");
@@ -403,7 +462,21 @@ export default function QRaft() {
   const dm = darkMode;
 
   // ── Auth listener ──────────────────────────────────────────────────────────
-  useEffect(()=>{ const unsub=onAuthStateChanged(auth,u=>setUser(u)); return unsub; },[]);
+  const fetchQrCodes = async (uid) => {
+    try {
+      const q    = query(collection(db,"qrcodes"), where("uid","==",uid), orderBy("createdAt","desc"));
+      const snap = await getDocs(q);
+      setQrCodes(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+    } catch(e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, u => {
+      setUser(u);
+      if (u) fetchQrCodes(u.uid);
+    });
+    return unsub;
+  }, []);
 
   // ── Build QR data ──────────────────────────────────────────────────────────
   const buildData = useCallback(()=>{
@@ -526,8 +599,8 @@ export default function QRaft() {
   const txt     = dm?"text-white":"text-gray-900";
   const sub     = dm?"text-gray-400":"text-gray-500";
   const accent  = dm?"text-cyan-400":"text-purple-600";
-  const inp     = `w-full px-4 py-3 rounded-xl border text-sm transition-all focus:outline-none focus:ring-2 focus:ring-cyan-500 ${dm?"bg-[#1a1a2e] border-white/10 text-white placeholder-gray-600":"bg-white border-gray-200 text-gray-900"}`;
-  const lbl     = `block text-xs font-semibold uppercase tracking-wide mb-1 ${dm?"text-gray-400":"text-gray-500"}`;
+  const inp     = `w-full px-4 py-3 rounded-xl border text-base transition-all focus:outline-none focus:ring-2 focus:ring-cyan-500 ${dm?"bg-[#1a1a2e] border-white/10 text-white placeholder-gray-500":"bg-white border-gray-200 text-gray-900"}`;
+  const lbl     = `block text-sm font-semibold uppercase tracking-wide mb-1.5 ${dm?"text-gray-300":"text-gray-600"}`;
   const panelBg = dm?"bg-[#1a1a2e] border border-white/5":"bg-gray-50 border border-gray-200";
   const ghost   = `flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium transition-all ${dm?"bg-white/5 text-gray-300 hover:bg-white/10 border border-white/10":"bg-gray-100 text-gray-700 hover:bg-gray-200"}`;
 
@@ -535,6 +608,13 @@ export default function QRaft() {
     <div className={`min-h-screen ${bg} transition-colors duration-300`}>
       {dm&&(<div className="fixed inset-0 pointer-events-none overflow-hidden z-0"><div style={{position:"absolute",top:"-15%",left:"-10%",width:600,height:600,borderRadius:"50%",background:"radial-gradient(circle,#00f5ff18,transparent 70%)",animation:"blob 8s ease-in-out infinite"}}/><div style={{position:"absolute",bottom:"-15%",right:"-10%",width:500,height:500,borderRadius:"50%",background:"radial-gradient(circle,#a855f718,transparent 70%)",animation:"blob 10s ease-in-out infinite reverse"}}/><style>{`@keyframes blob{0%,100%{transform:scale(1)}50%{transform:scale(1.12) translate(15px,-15px)}}`}</style></div>)}
 
+      {showAnalytics && user && (
+        <Analytics
+          user={user} dm={dm}
+          qrCodes={qrCodes}
+          onClose={() => setShowAnalytics(false)}
+        />
+      )}
       {/* Modals */}
       {showAuth      && <AuthModal dm={dm} onClose={()=>setShowAuth(false)}/>}
       {showDashboard && user && <Dashboard user={user} dm={dm} onClose={()=>setShowDashboard(false)} onEdit={qr=>{setShowDashboard(false);drawQR(SHORT_BASE+qr.shortId,qrRef.current);}}/>}
@@ -554,16 +634,17 @@ export default function QRaft() {
       <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 relative z-10 pb-24 md:pb-10">
 
         {/* ── Top bar ── */}
-        <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <img src={logo} alt="QRaft" className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-lg" style={dm?{boxShadow:"0 0 20px #00f5ff55"}:{}}/>
-            <span className="text-lg sm:text-xl font-black" style={dm?{background:"linear-gradient(135deg,#00f5ff,#a855f7)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}:{background:"linear-gradient(135deg,#7c3aed,#2563eb)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>QRaft</span>
-          </div>
+        <div className="flex items-center justify-between mb-2 sm:mb-4">
           <div className="flex items-center gap-2">
             <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${dm?"bg-[#1a1a2e] text-cyan-400 border border-cyan-500/20":"bg-white text-purple-600 shadow"}`}>⚡ {scanCount} crafted</div>
+          </div>
+          <div className="flex items-center gap-2">
             {user ? (
               <div className="flex items-center gap-2">
-                <button onClick={()=>setShowDashboard(true)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${dm?"bg-cyan-400/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-400/20":"bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100"}`}>
+                <button onClick={()=>setShowAnalytics(true)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${dm?"bg-purple-400/10 text-purple-400 border border-purple-400/20 hover:bg-purple-400/20":"bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100"}`}>
+                  <BarChart2 className="w-3 h-3"/> <span className="hidden sm:inline">Analytics</span>
+                </button>
+                <button onClick={()=>{setShowDashboard(true);fetchQrCodes(user.uid);}} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${dm?"bg-cyan-400/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-400/20":"bg-cyan-50 text-cyan-600 border border-cyan-200 hover:bg-cyan-100"}`}>
                   <LayoutDashboard className="w-3 h-3"/> <span className="hidden sm:inline">My QR Codes</span>
                 </button>
                 <button onClick={()=>signOut(auth)} className={`p-2 rounded-full transition-all ${dm?"bg-[#1a1a2e] text-gray-400 border border-white/10 hover:text-red-400":"bg-white text-gray-500 shadow hover:text-red-500"}`} title="Sign out"><LogOut className="w-4 h-4"/></button>
@@ -579,10 +660,16 @@ export default function QRaft() {
           </div>
         </div>
 
-        {/* Tagline */}
-        <div className="text-center mb-4 sm:mb-6">
-          <h1 className={`text-xl sm:text-2xl lg:text-3xl font-black mb-1 ${txt}`}>Craft stunning QR codes in seconds</h1>
-          <p className={`text-xs sm:text-sm ${sub}`}>URLs · Text · WiFi · Contacts · Email · Files · Dynamic</p>
+        {/* ── Centered hero header ── */}
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="flex items-center justify-center gap-3 mb-3">
+            <img src={logo} alt="QRaft" className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl shadow-lg" style={dm?{boxShadow:"0 0 24px #00f5ff66"}:{boxShadow:"0 4px 20px rgba(124,58,237,0.3)"}}/>
+            <span className="text-4xl sm:text-5xl font-black tracking-tight" style={dm?{background:"linear-gradient(135deg,#00f5ff,#a855f7)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}:{background:"linear-gradient(135deg,#7c3aed,#2563eb)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>
+              QRaft
+            </span>
+          </div>
+          <h1 className={`text-lg sm:text-xl lg:text-2xl font-semibold mb-1 ${txt}`}>Craft stunning QR codes in seconds</h1>
+          <p className={`text-sm sm:text-base ${sub}`}>URLs · Text · WiFi · Contacts · Email · Files · Dynamic</p>
         </div>
 
         {/* Main card */}
@@ -602,7 +689,7 @@ export default function QRaft() {
 
               {/* ── LEFT ── */}
               <div className="space-y-4">
-                <h2 className={`text-base sm:text-lg font-bold ${txt}`}>
+                <h2 className={`text-lg sm:text-xl font-bold ${txt}`}>
                   {activeTab==="url"&&"🔗 Enter URL"}{activeTab==="text"&&"✏️ Enter Text"}
                   {activeTab==="contact"&&"👤 Contact Info"}{activeTab==="wifi"&&"📶 WiFi Details"}
                   {activeTab==="email"&&"✉️ Email / SMS"}{activeTab==="file"&&"📄 Upload Document"}
