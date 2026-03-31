@@ -9,10 +9,13 @@ import {
 // ── Stripe instance (lazy loaded) ─────────────────────────────────────────────
 let stripePromise = null;
 const getStripe = () => {
+  const key = process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY;
+  if (!key) {
+    console.error("Stripe publishable key is missing. Add REACT_APP_STRIPE_PUBLISHABLE_KEY to your .env file.");
+    return null;
+  }
   if (!stripePromise) {
-    stripePromise = loadStripe(
-      process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || ""
-    );
+    stripePromise = loadStripe(key);
   }
   return stripePromise;
 };
@@ -53,10 +56,10 @@ export async function startCheckout() {
   if (!user) throw new Error("Please sign in before purchasing.");
 
   const stripe = await getStripe();
-  if (!stripe) throw new Error("Stripe failed to load. Check your publishable key.");
+  if (!stripe) throw new Error("Stripe is not configured. Please add your publishable key to the environment variables.");
 
   const priceId = process.env.REACT_APP_STRIPE_PRICE_ID;
-  if (!priceId) throw new Error("Stripe Price ID is not configured.");
+  if (!priceId) throw new Error("Stripe Price ID is missing. Add REACT_APP_STRIPE_PRICE_ID to your environment variables.");
 
   // Store pending session in Firestore so we can verify after redirect
   await setDoc(doc(db, "pendingPayments", user.uid), {
