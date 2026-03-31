@@ -4,7 +4,7 @@ import {
   FileText, Upload, X, Moon, Sun, Share2, Sliders, Palette,
   Wifi, Mail, Printer, Lock, Unlock, Maximize2,
   ChevronDown, ChevronUp, History, Grid, LogIn, LogOut,
-  RefreshCw, Trash2, Edit2, LayoutDashboard, Plus, BarChart2
+  RefreshCw, Trash2, Edit2, LayoutDashboard, Plus, BarChart2, Zap
 } from "lucide-react";
 import logo from "./logo.png";
 import { auth, db, googleProvider } from "./firebase";
@@ -16,10 +16,14 @@ import {
   collection, addDoc, getDocs, updateDoc, deleteDoc,
   doc, query, where, orderBy, serverTimestamp, increment
 } from "firebase/firestore";
-import Analytics from "./Analytics";
-import Redirect  from "./Redirect";
-import Landing   from "./Landing";
+import Analytics  from "./Analytics";
+import Redirect   from "./Redirect";
+import Landing    from "./Landing";
+import ProModal   from "./ProModal";
 import { ToastProvider, toast } from "./Toast";
+import { uploadToFirebase, formatSize } from "./FileUpload";
+import { exportPNG, exportSVG, exportPDF } from "./Export";
+import { checkProStatus, handlePaymentReturn } from "./Stripe";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const SHORT_BASE = window.location.origin + "/r/";
