@@ -83,18 +83,50 @@ async function getQRMatrix(text,size){
 }
 
 // ── File Upload ───────────────────────────────────────────────────────────────
+// Uses multiple hosts with CORS-friendly APIs
 const FILE_HOSTS=[
-  async f=>{const form=new FormData();form.append("file",f);const res=await fetch("https://file.io/?expires=1w",{method:"POST",body:form,headers:{"Accept":"application/json"}});if(!res.ok)throw new Error(`file.io HTTP ${res.status}`);const j=await res.json();if(j.success&&j.link)return j.link;throw new Error(j.message||"file.io: no link");},
-  async f=>{const form=new FormData();form.append("file",f);const res=await fetch("https://0x0.st",{method:"POST",body:form});if(!res.ok)throw new Error(`0x0.st HTTP ${res.status}`);const url=(await res.text()).trim();if(url.startsWith("http"))return url;throw new Error("0x0.st: invalid response");},
-  async f=>{const form=new FormData();form.append("reqtype","fileupload");form.append("time","24h");form.append("fileToUpload",f);const res=await fetch("https://litterbox.catbox.moe/resources/internals/api.php",{method:"POST",body:form});if(!res.ok)throw new Error(`litterbox HTTP ${res.status}`);const url=(await res.text()).trim();if(url.startsWith("http"))return url;throw new Error("litterbox: invalid response");},
+  // Host 1: file.io — returns JSON with link
+  async f=>{
+    const form=new FormData();form.append("file",f);
+    const res=await fetch("https://file.io",{method:"POST",body:form});
+    if(!res.ok)throw new Error(`file.io ${res.status}`);
+    const j=await res.json();
+    if(j.success&&j.link)return j.link;
+    throw new Error(j.message||"file.io failed");
+  },
+  // Host 2: catbox.moe — permanent free hosting
+  async f=>{
+    const form=new FormData();
+    form.append("reqtype","fileupload");
+    form.append("fileToUpload",f);
+    const res=await fetch("https://catbox.moe/user/api.php",{method:"POST",body:form});
+    if(!res.ok)throw new Error(`catbox ${res.status}`);
+    const url=(await res.text()).trim();
+    if(url.startsWith("http"))return url;
+    throw new Error("catbox: "+url);
+  },
+  // Host 3: litterbox — temporary (72h)
+  async f=>{
+    const form=new FormData();
+    form.append("reqtype","fileupload");
+    form.append("time","72h");
+    form.append("fileToUpload",f);
+    const res=await fetch("https://litterbox.catbox.moe/resources/internals/api.php",{method:"POST",body:form});
+    if(!res.ok)throw new Error(`litterbox ${res.status}`);
+    const url=(await res.text()).trim();
+    if(url.startsWith("http"))return url;
+    throw new Error("litterbox failed");
+  },
 ];
 async function uploadFile(file,onProgress){
   const errors=[];
   for(let i=0;i<FILE_HOSTS.length;i++){
-    try{onProgress?.(`Uploading… (attempt ${i+1}/${FILE_HOSTS.length})`);return await FILE_HOSTS[i](file);}
-    catch(e){errors.push(e.message);}
+    try{
+      onProgress?.(`Uploading… host ${i+1}/${FILE_HOSTS.length}`);
+      return await FILE_HOSTS[i](file);
+    }catch(e){errors.push(e.message);}
   }
-  throw new Error("All upload hosts failed: "+errors.join(" | "));
+  throw new Error("All hosts failed: "+errors.join(" | "));
 }
 
 // ── Toggle ────────────────────────────────────────────────────────────────────
@@ -440,7 +472,12 @@ function QRaftApp(){
     try{
       const shortId=genId();
       const docRef=await addDoc(collection(db,"qrcodes"),{uid:user.uid,shortId,destination:raw,label:dynamicLabel||"Untitled QR",scans:0,qrColor,qrBg,qrShape,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
-      setSavedDynamic({id:docRef.id,shortId,destination:raw});
+      const saved={id:docRef.id,shortId,destination:raw};
+      setSavedDynamic(saved);
+      // Force QR preview to show the short redirect URL
+      const shortUrl=SHORT_BASE+shortId;
+      setQrData(shortUrl);
+      setTimeout(()=>drawQR(shortUrl,qrRef.current),100);
       toast.success("Dynamic QR saved! Edit it anytime from My QR Codes.");
     }catch(e){console.error(e);toast.error("Failed to save. Check your connection.");}
     finally{setSavingDynamic(false);}
@@ -505,7 +542,15 @@ function QRaftApp(){
         <div className="text-center mb-6 sm:mb-8">
           <div className="flex items-center justify-center gap-3 mb-3">
             <img src={logo} alt="QRaft" className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl shadow-lg" style={dm?{boxShadow:"0 0 24px #00f5ff66"}:{boxShadow:"0 4px 20px rgba(124,58,237,0.3)"}}/>
-            <span className="text-4xl sm:text-5xl font-black tracking-tight" style={dm?{background:"linear-gradient(135deg,#00f5ff,#a855f7)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}:{background:"linear-gradient(135deg,#7c3aed,#2563eb)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>QRaft</span>
+            <span className="text-4xl sm:text-5xl font-black tracking-tight"
+              style={{
+                background:"linear-gradient(135deg,#7c3aed,#2563eb)",
+                WebkitBackgroundClip:"text",
+                WebkitTextFillColor:"transparent",
+                backgroundClip:"text",
+              }}>
+              QRaft
+            </span>
           </div>
           <h1 className={`text-lg sm:text-xl lg:text-2xl font-semibold mb-1 ${txt}`}>Craft stunning QR codes in seconds</h1>
           <p className={`text-sm sm:text-base ${sub}`}>URLs · Text · WiFi · Contacts · Email · Files · Dynamic</p>
