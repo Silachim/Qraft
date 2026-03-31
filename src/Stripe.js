@@ -88,11 +88,15 @@ export async function handlePaymentReturn() {
   const uid     = params.get("uid");
 
   if (payment === "success" && uid) {
-    // Clean URL
     window.history.replaceState({}, "", window.location.pathname);
-    // Grant Pro access
-    await grantProAccess(uid, "stripe_checkout");
-    return "success";
+    try {
+      await grantProAccess(uid, "stripe_checkout");
+      return "success";
+    } catch(e) {
+      console.error("Failed to grant Pro:", e);
+      // Still return success — user paid, we'll retry
+      return "success";
+    }
   }
   if (payment === "cancelled") {
     window.history.replaceState({}, "", window.location.pathname);
