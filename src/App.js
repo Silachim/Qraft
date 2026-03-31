@@ -521,7 +521,16 @@ function QRaftApp(){
 
         {/* Top bar */}
         <div className="flex items-center justify-between mb-2 sm:mb-4">
-          <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${dm?"bg-[#1a1a2e] text-cyan-400 border border-cyan-500/20":"bg-white text-purple-600 shadow"}`}>⚡ {scanCount} crafted</div>
+          {/* Logo on the left */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <img src={logo} alt="QRaft" className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-lg" style={dm?{boxShadow:"0 0 20px #00f5ff55"}:{boxShadow:"0 2px 12px rgba(124,58,237,0.3)"}}/>
+            <span className="text-lg sm:text-xl font-black"
+              style={{background:"linear-gradient(135deg,#7c3aed,#2563eb)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>
+              QRaft
+            </span>
+            <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold ${dm?"bg-[#1a1a2e] text-cyan-400 border border-cyan-500/20":"bg-white text-purple-600 shadow"}`}>⚡ {scanCount} crafted</div>
+          </div>
+          {/* Controls on the right */}
           <div className="flex items-center gap-2">
             {user?(
               <div className="flex items-center gap-2">
@@ -538,21 +547,9 @@ function QRaftApp(){
           </div>
         </div>
 
-        {/* Hero */}
+        {/* Hero — tagline only, no duplicate logo */}
         <div className="text-center mb-6 sm:mb-8">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <img src={logo} alt="QRaft" className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl shadow-lg" style={dm?{boxShadow:"0 0 24px #00f5ff66"}:{boxShadow:"0 4px 20px rgba(124,58,237,0.3)"}}/>
-            <span className="text-4xl sm:text-5xl font-black tracking-tight"
-              style={{
-                background:"linear-gradient(135deg,#7c3aed,#2563eb)",
-                WebkitBackgroundClip:"text",
-                WebkitTextFillColor:"transparent",
-                backgroundClip:"text",
-              }}>
-              QRaft
-            </span>
-          </div>
-          <h1 className={`text-lg sm:text-xl lg:text-2xl font-semibold mb-1 ${txt}`}>Craft stunning QR codes in seconds</h1>
+          <h1 className={`text-xl sm:text-2xl lg:text-3xl font-black mb-1 ${txt}`}>Craft stunning QR codes in seconds</h1>
           <p className={`text-sm sm:text-base ${sub}`}>URLs · Text · WiFi · Contacts · Email · Files · Dynamic</p>
         </div>
 
