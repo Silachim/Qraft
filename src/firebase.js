@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey:            process.env.REACT_APP_FIREBASE_API_KEY            || "AIzaSyCGDbbAYO8zvGe4J1Y0ouiW2LhgNzcKyxI",
@@ -12,16 +13,17 @@ const firebaseConfig = {
   appId:             process.env.REACT_APP_FIREBASE_APP_ID             || "1:456005423683:web:5222ff12b493c02c3e7af6",
 };
 
-let app, auth, db, googleProvider;
+let app, auth, db, storage, googleProvider;
 
 try {
   app            = initializeApp(firebaseConfig);
   auth           = getAuth(app);
   db             = getFirestore(app);
+  storage        = getStorage(app);
   googleProvider = new GoogleAuthProvider();
-} catch (e) {
+} catch(e) {
   console.error("Firebase init failed:", e.message);
 }
 
-export { auth, db, googleProvider };
+export { auth, db, storage, googleProvider };
 export default app;

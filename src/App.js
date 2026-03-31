@@ -328,9 +328,11 @@ function QRaftApp(){
   const [showLanding,   setShowLanding]   = useState(()=>!localStorage.getItem("qraft_visited"));
   const [darkMode,      setDarkMode]      = useState(prefersDark);
   const [user,          setUser]          = useState(null);
+  const [isPro,         setIsPro]         = useState(false);
   const [showAuth,      setShowAuth]      = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showProModal,  setShowProModal]  = useState(false);
   const [qrCodes,       setQrCodes]       = useState([]);
   const [activeTab,     setActiveTab]     = useState("url");
   const [qrData,        setQrData]        = useState("");
@@ -385,9 +387,30 @@ function QRaftApp(){
   },[]);
 
   useEffect(()=>{
-    const unsub=onAuthStateChanged(auth,u=>{setUser(u);if(u)fetchQrCodes(u.uid);});
+    const unsub=onAuthStateChanged(auth,async u=>{
+      setUser(u);
+      if(u){
+        fetchQrCodes(u.uid);
+        const pro = await checkProStatus(u.uid);
+        setIsPro(pro);
+      } else {
+        setIsPro(false);
+      }
+    });
     return unsub;
   },[fetchQrCodes]);
+
+  // Handle Stripe payment return
+  useEffect(()=>{
+    handlePaymentReturn().then(result=>{
+      if(result==="success"){
+        toast.success("🎉 Welcome to QRaft Pro! All features unlocked.");
+        if(auth.currentUser) checkProStatus(auth.currentUser.uid).then(setIsPro);
+      } else if(result==="cancelled"){
+        toast.info("Payment cancelled. Upgrade anytime from the Pro button.");
+      }
+    });
+  },[]);
 
   const buildData=useCallback(()=>{
     if(isDynamic&&savedDynamic)return SHORT_BASE+savedDynamic.shortId;
@@ -442,10 +465,52 @@ function QRaftApp(){
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const getCanvas=()=>qrRef.current?.querySelector("canvas");
-  const downloadQR=()=>{const c=getCanvas();if(!c){toast.error("No QR code to download yet!");return;}const a=document.createElement("a");a.download=`qraft-${activeTab}.png`;a.href=c.toDataURL("image/png");a.click();toast.success("QR code downloaded!");};
-  const printQR=()=>{const c=getCanvas();if(!c){toast.error("No QR code to print yet!");return;}const w=window.open("","_blank");w.document.write(`<!DOCTYPE html><html><head><title>QRaft</title><style>body{margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;}img{max-width:300px;}h2{margin-top:12px;}button{margin-top:16px;padding:8px 24px;cursor:pointer;}@media print{button{display:none;}}</style></head><body><img src="${c.toDataURL()}"/><h2>QRaft</h2><button onclick="window.print()">Print</button></body></html>`);w.document.close();setTimeout(()=>w.print(),500);};
-  const shareQR=async()=>{const c=getCanvas();if(!c){toast.error("No QR code to share yet!");return;}c.toBlob(async(blob)=>{const file=new File([blob],"qraft-qr.png",{type:"image/png"});if(navigator.canShare?.({files:[file]})){try{await navigator.share({title:"QRaft QR Code",files:[file]});toast.success("Shared!");return;}catch{}}await navigator.clipboard.writeText(window.location.href);toast.success("Link copied!");});};
-  const copyData=async()=>{if(!qrData){toast.error("No QR data to copy!");return;}await navigator.clipboard.writeText(qrData);toast.success("QR data copied!");setCopied(true);setTimeout(()=>setCopied(false),2000);};
+
+  const downloadQR=()=>{
+    const c=getCanvas();
+    if(!c){toast.error("No QR code to export yet!");return;}
+    try{
+      exportPNG(c,`qraft-${activeTab}.png`,2);
+      toast.success("QR code downloaded (2x high-DPI)!");
+    }catch(e){toast.error(e.message);}
+  };
+
+  const downloadSVG=()=>{
+    if(!qrData){toast.error("No QR code to export yet!");return;}
+    if(!isPro){setShowProModal(true);return;}
+    try{
+      // We need to regenerate modules for SVG export
+      getQRMatrix(qrData,qrSize).then(({modules})=>{
+        exportSVG(modules,qrSize,qrColor,qrBg,qrShape,`qraft-${activeTab}.svg`);
+        toast.success("SVG exported — scalable to any print size!");
+      });
+    }catch(e){toast.error(e.message);}
+  };
+
+  const printQR=()=>{
+    const c=getCanvas();
+    if(!c){toast.error("No QR code to print yet!");return;}
+    try{
+      exportPDF(c,`QRaft — ${activeTab} QR code`,`qraft-${activeTab}.pdf`);
+    }catch(e){toast.error(e.message);}
+  };
+
+  const shareQR=async()=>{
+    const c=getCanvas();if(!c){toast.error("No QR code to share yet!");return;}
+    c.toBlob(async(blob)=>{
+      const file=new File([blob],"qraft-qr.png",{type:"image/png"});
+      if(navigator.canShare?.({files:[file]})){try{await navigator.share({title:"QRaft QR Code",files:[file]});toast.success("Shared!");return;}catch{}}
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copied to clipboard!");
+    });
+  };
+
+  const copyData=async()=>{
+    if(!qrData){toast.error("No QR data to copy!");return;}
+    await navigator.clipboard.writeText(qrData);
+    toast.success("QR data copied!");
+    setCopied(true);setTimeout(()=>setCopied(false),2000);
+  };
   const resetForm=()=>{
     setUrlInput("");setTextInput("");
     setContact({firstName:"",lastName:"",phone:"",email:"",organization:"",url:""});
@@ -482,15 +547,27 @@ function QRaftApp(){
     }catch(e){console.error(e);toast.error("Failed to save. Check your connection.");}
     finally{setSavingDynamic(false);}
   };
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   const processFile=async(f)=>{
-    setFileError("");setUploadError("");setUploadedUrl("");setFileDataUrl("");setUploadStatus("");
-    const ok=["application/pdf","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
-    if(!ok.includes(f.type)){setFileError("Only PDF / DOC / DOCX supported.");return;}
-    if(f.size>100*1024*1024){setFileError("Max file size is 100MB.");return;}
+    // Check Pro status for file uploads
+    if(!isPro){setShowProModal(true);return;}
+    if(!user){setShowAuth(true);toast.info("Please sign in to upload files.");return;}
+    setFileError("");setUploadError("");setUploadedUrl("");setFileDataUrl("");setUploadStatus("");setUploadProgress(0);
     setUploadedFile(f);setUploading(true);
-    try{const url=await uploadFile(f,msg=>setUploadStatus(msg));setUploadedUrl(url);setFileDataUrl(url);toast.success("File uploaded!");}
-    catch(err){setUploadError(err.message);setUploadedFile(null);toast.error("Upload failed: "+err.message);}
-    finally{setUploading(false);setUploadStatus("");}
+    try{
+      const result = await uploadToFirebase(f,(pct,state)=>{
+        setUploadProgress(pct);
+        setUploadStatus(`Uploading… ${pct}%`);
+      });
+      setUploadedUrl(result.url);
+      setFileDataUrl(result.url);
+      toast.success(`File uploaded to Firebase Storage!`);
+    }catch(err){
+      setUploadError(err.message);
+      setUploadedFile(null);
+      toast.error(err.message);
+    }finally{setUploading(false);setUploadStatus("");}
   };
 
   // ── Landing page handler — after all hooks ─────────────────────────────────
@@ -515,6 +592,7 @@ function QRaftApp(){
       {showAnalytics&&user&&<Analytics user={user} dm={dm} qrCodes={qrCodes} onClose={()=>setShowAnalytics(false)}/>}
       {showAuth&&<AuthModal dm={dm} onClose={()=>setShowAuth(false)}/>}
       {showDashboard&&user&&<Dashboard user={user} dm={dm} onClose={()=>setShowDashboard(false)} onEdit={qr=>{setShowDashboard(false);drawQR(SHORT_BASE+qr.shortId,qrRef.current);}}/>}
+      {showProModal&&<ProModal dm={dm} user={user} onClose={()=>setShowProModal(false)} onSignIn={()=>{setShowProModal(false);setShowAuth(true);}}/>}
       {fullscreen&&qrData&&<FullscreenQR qrData={qrData} qrColor={qrColor} qrBg={qrBg} qrShape={qrShape} embedLogo={embedLogo} onClose={()=>setFullscreen(false)}/>}
 
       <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 relative z-10 pb-24 md:pb-10">
@@ -534,6 +612,15 @@ function QRaftApp(){
           <div className="flex items-center gap-2">
             {user?(
               <div className="flex items-center gap-2">
+                {isPro?(
+                  <span className={`hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold ${dm?"bg-purple-400/20 text-purple-300 border border-purple-400/30":"bg-purple-100 text-purple-700 border border-purple-200"}`}>
+                    <Zap className="w-3 h-3"/> Pro
+                  </span>
+                ):(
+                  <button onClick={()=>setShowProModal(true)} className="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-white transition-all hover:opacity-90" style={{background:"linear-gradient(135deg,#7c3aed,#2563eb)"}}>
+                    <Zap className="w-3 h-3"/> Upgrade $29
+                  </button>
+                )}
                 <button onClick={()=>setShowAnalytics(true)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${dm?"bg-purple-400/10 text-purple-400 border border-purple-400/20 hover:bg-purple-400/20":"bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100"}`}><BarChart2 className="w-3 h-3"/><span className="hidden sm:inline">Analytics</span></button>
                 <button onClick={()=>{setShowDashboard(true);fetchQrCodes(user.uid);}} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${dm?"bg-cyan-400/10 text-cyan-400 border border-cyan-400/20 hover:bg-cyan-400/20":"bg-cyan-50 text-cyan-600 border border-cyan-200 hover:bg-cyan-100"}`}><LayoutDashboard className="w-3 h-3"/><span className="hidden sm:inline">My QR Codes</span></button>
                 <button onClick={()=>signOut(auth)} className={`p-2 rounded-full ${dm?"bg-[#1a1a2e] text-gray-400 border border-white/10 hover:text-red-400":"bg-white text-gray-500 shadow hover:text-red-500"}`} title="Sign out"><LogOut className="w-4 h-4"/></button>
@@ -581,14 +668,52 @@ function QRaftApp(){
                 {activeTab==="email"&&(<div className="space-y-3"><div className={`flex rounded-xl overflow-hidden border ${dm?"border-white/10":"border-gray-200"}`}>{["email","sms"].map(t=>(<button key={t} onClick={()=>setEmailOrSms(t)} className={`flex-1 py-2.5 text-sm font-semibold transition-all ${emailOrSms===t?dm?"bg-cyan-500/20 text-cyan-400":"bg-purple-100 text-purple-700":dm?"text-gray-500 hover:bg-white/5":"text-gray-400 hover:bg-gray-50"}`}>{t==="email"?"✉️ Email":"💬 SMS"}</button>))}</div>{emailOrSms==="email"?(<><div><label className={lbl}>To</label><input type="email" value={emailInfo.to} onChange={e=>setEmailInfo({...emailInfo,to:e.target.value})} placeholder="recipient@example.com" className={inp}/></div><div><label className={lbl}>Subject</label><input value={emailInfo.subject} onChange={e=>setEmailInfo({...emailInfo,subject:e.target.value})} placeholder="Hello!" className={inp}/></div><div><label className={lbl}>Body</label><textarea value={emailInfo.body} onChange={e=>setEmailInfo({...emailInfo,body:e.target.value})} placeholder="Your message..." rows={3} className={inp+" resize-none"}/></div></>):(<><div><label className={lbl}>Phone Number</label><input type="tel" value={smsInfo.phone} onChange={e=>setSmsInfo({...smsInfo,phone:e.target.value})} placeholder="+1 555 000 0000" className={inp}/></div><div><label className={lbl}>Message</label><textarea value={smsInfo.message} onChange={e=>setSmsInfo({...smsInfo,message:e.target.value})} placeholder="Your message..." rows={3} className={inp+" resize-none"}/></div></>)}</div>)}
                 {activeTab==="file"&&(
                   <div className="space-y-3">
-                    <div onDragOver={e=>{e.preventDefault();setIsDragging(true)}} onDragLeave={()=>setIsDragging(false)} onDrop={e=>{e.preventDefault();setIsDragging(false);if(e.dataTransfer.files[0])processFile(e.dataTransfer.files[0])}} onClick={()=>!uploadedFile&&!uploading&&fileRef.current?.click()} className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${isDragging?"border-cyan-400 bg-cyan-400/10":uploadedFile?"border-green-400 bg-green-400/10":dm?"border-gray-700 hover:border-cyan-400 hover:bg-cyan-400/5":"border-gray-300 hover:border-purple-400 hover:bg-purple-50"}`}>
-                      <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" onChange={e=>e.target.files[0]&&processFile(e.target.files[0])} className="hidden"/>
-                      {uploading?(<div className="py-2"><div className={`w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-2 ${dm?"border-cyan-400":"border-purple-500"}`}/><p className={`text-sm font-medium ${txt}`}>{uploadStatus||"Uploading…"}</p></div>):uploadedFile?(<div className="flex items-center justify-between"><div className="flex items-center gap-3"><div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${uploadedUrl?dm?"bg-green-400/20":"bg-green-100":dm?"bg-cyan-400/20":"bg-purple-100"}`}><FileText className={`w-4 h-4 ${uploadedUrl?dm?"text-green-400":"text-green-600":accent}`}/></div><div className="text-left min-w-0"><p className={`font-semibold text-sm truncate max-w-[140px] ${txt}`}>{uploadedFile.name}</p><p className={`text-xs ${uploadedUrl?"text-green-400":"text-yellow-400"}`}>{uploadedUrl?"✓ Uploaded!":"Processing…"}</p></div></div><button onClick={e=>{e.stopPropagation();setUploadedFile(null);setFileDataUrl("");setUploadedUrl("");setFileError("");setUploadError("");if(fileRef.current)fileRef.current.value=""}} className="p-1.5 hover:bg-red-500/20 rounded-lg text-gray-400 hover:text-red-400 flex-shrink-0"><X className="w-4 h-4"/></button></div>):(<><Upload className={`w-8 h-8 mx-auto mb-2 ${dm?"text-gray-600":"text-gray-300"}`}/><p className={`font-medium text-sm ${txt}`}>Drop or click to upload</p><p className={`text-xs mt-1 ${sub}`}>PDF, DOC, DOCX — up to 100MB</p></>)}
-                    </div>
-                    {fileError&&<p className={`text-xs px-3 py-2 rounded-xl ${dm?"bg-red-500/10 border border-red-500/20 text-red-400":"bg-red-50 border border-red-200 text-red-600"}`}>{fileError}</p>}
-                    {uploadError&&<p className={`text-xs px-3 py-2 rounded-xl ${dm?"bg-red-500/10 border border-red-500/20 text-red-400":"bg-red-50 border border-red-200 text-red-600"}`}>{uploadError}</p>}
-                    {uploadedUrl&&<div className={`text-xs px-3 py-2 rounded-xl space-y-1 ${dm?"bg-green-500/10 border border-green-500/20 text-green-300":"bg-green-50 border border-green-200 text-green-700"}`}><p className="font-bold">✅ Hosted!</p><p className="break-all font-mono opacity-80">{uploadedUrl}</p><p className="opacity-60">⏳ Expires in 7 days.</p></div>}
-                    <p className={`text-xs px-3 py-2 rounded-xl ${dm?"bg-blue-400/10 border border-blue-400/20 text-blue-300":"bg-blue-50 border border-blue-200 text-blue-700"}`}>🔒 Anonymous upload via <strong>file.io</strong></p>
+                    {!isPro&&(
+                      <div className={`rounded-2xl p-4 text-center ${dm?"bg-purple-400/10 border border-purple-400/20":"bg-purple-50 border border-purple-200"}`}>
+                        <Zap className={`w-6 h-6 mx-auto mb-2 ${dm?"text-purple-400":"text-purple-600"}`}/>
+                        <p className={`text-sm font-bold mb-1 ${dm?"text-purple-300":"text-purple-700"}`}>Pro Feature</p>
+                        <p className={`text-xs mb-3 ${dm?"text-purple-400":"text-purple-600"}`}>File uploads require QRaft Pro. Files are stored securely in Firebase Storage.</p>
+                        <button onClick={()=>setShowProModal(true)} className="px-4 py-2 rounded-xl text-sm font-bold text-white" style={{background:"linear-gradient(135deg,#7c3aed,#2563eb)"}}>
+                          Upgrade — $29 lifetime
+                        </button>
+                      </div>
+                    )}
+                    {isPro&&(
+                      <>
+                        <div onDragOver={e=>{e.preventDefault();setIsDragging(true)}} onDragLeave={()=>setIsDragging(false)} onDrop={e=>{e.preventDefault();setIsDragging(false);if(e.dataTransfer.files[0])processFile(e.dataTransfer.files[0])}} onClick={()=>!uploadedFile&&!uploading&&fileRef.current?.click()} className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${isDragging?"border-cyan-400 bg-cyan-400/10":uploadedFile?"border-green-400 bg-green-400/10":dm?"border-gray-700 hover:border-cyan-400 hover:bg-cyan-400/5":"border-gray-300 hover:border-purple-400 hover:bg-purple-50"}`}>
+                          <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" onChange={e=>e.target.files[0]&&processFile(e.target.files[0])} className="hidden"/>
+                          {uploading?(
+                            <div className="py-2">
+                              <div className={`w-8 h-8 border-2 border-t-transparent rounded-full animate-spin mx-auto mb-2 ${dm?"border-cyan-400":"border-purple-500"}`}/>
+                              <p className={`text-sm font-medium mb-2 ${txt}`}>{uploadStatus||"Uploading…"}</p>
+                              <div className={`w-full h-2 rounded-full overflow-hidden ${dm?"bg-white/10":"bg-gray-200"}`}>
+                                <div className="h-full rounded-full transition-all duration-300" style={{width:`${uploadProgress}%`,background:"linear-gradient(135deg,#00f5ff,#a855f7)"}}/>
+                              </div>
+                              <p className={`text-xs mt-1 ${sub}`}>{uploadProgress}% complete</p>
+                            </div>
+                          ):uploadedFile?(
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${uploadedUrl?dm?"bg-green-400/20":"bg-green-100":dm?"bg-cyan-400/20":"bg-purple-100"}`}>
+                                  <FileText className={`w-4 h-4 ${uploadedUrl?dm?"text-green-400":"text-green-600":accent}`}/>
+                                </div>
+                                <div className="text-left min-w-0">
+                                  <p className={`font-semibold text-sm truncate max-w-[140px] ${txt}`}>{uploadedFile.name}</p>
+                                  <p className={`text-xs ${uploadedUrl?"text-green-400":"text-yellow-400"}`}>{uploadedUrl?`✓ Stored in Firebase · ${formatSize(uploadedFile.size)}`:"Processing…"}</p>
+                                </div>
+                              </div>
+                              <button onClick={e=>{e.stopPropagation();setUploadedFile(null);setFileDataUrl("");setUploadedUrl("");setFileError("");setUploadError("");if(fileRef.current)fileRef.current.value=""}} className="p-1.5 hover:bg-red-500/20 rounded-lg text-gray-400 hover:text-red-400 flex-shrink-0"><X className="w-4 h-4"/></button>
+                            </div>
+                          ):(
+                            <><Upload className={`w-8 h-8 mx-auto mb-2 ${dm?"text-gray-600":"text-gray-300"}`}/><p className={`font-medium text-sm ${txt}`}>Drop or click to upload</p><p className={`text-xs mt-1 ${sub}`}>PDF, DOC, DOCX — up to 100MB · Stored in Firebase</p></>
+                          )}
+                        </div>
+                        {fileError&&<p className={`text-xs px-3 py-2 rounded-xl ${dm?"bg-red-500/10 border border-red-500/20 text-red-400":"bg-red-50 border border-red-200 text-red-600"}`}>{fileError}</p>}
+                        {uploadError&&<p className={`text-xs px-3 py-2 rounded-xl ${dm?"bg-red-500/10 border border-red-500/20 text-red-400":"bg-red-50 border border-red-200 text-red-600"}`}>{uploadError}</p>}
+                        {uploadedUrl&&<div className={`text-xs px-3 py-2 rounded-xl space-y-1 ${dm?"bg-green-500/10 border border-green-500/20 text-green-300":"bg-green-50 border border-green-200 text-green-700"}`}><p className="font-bold">✅ Stored in Firebase Storage!</p><p className="break-all font-mono opacity-80 text-[10px]">{uploadedUrl}</p><p className="opacity-60">Permanent link · No expiry · Your account only</p></div>}
+                        <p className={`text-xs px-3 py-2 rounded-xl ${dm?"bg-blue-400/10 border border-blue-400/20 text-blue-300":"bg-blue-50 border border-blue-200 text-blue-700"}`}>🔒 Files stored securely in <strong>Firebase Storage</strong> under your account</p>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -662,8 +787,11 @@ function QRaftApp(){
 
                 {qrData&&(
                   <div className="grid grid-cols-2 gap-2 w-full">
-                    <button onClick={downloadQR} className="col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-white shadow-lg hover:opacity-90 active:scale-95 transition-all" style={{background:"linear-gradient(135deg,#00f5ff,#a855f7)"}}><Download className="w-4 h-4"/> Save QR Code</button>
-                    <button onClick={printQR}  className={ghost}><Printer className="w-4 h-4"/> Print</button>
+                    <button onClick={downloadQR} className="col-span-2 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-white shadow-lg hover:opacity-90 active:scale-95 transition-all" style={{background:"linear-gradient(135deg,#00f5ff,#a855f7)"}}><Download className="w-4 h-4"/> Save PNG (2x)</button>
+                    <button onClick={downloadSVG} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium transition-all ${isPro?dm?"bg-purple-400/10 text-purple-400 border border-purple-400/20 hover:bg-purple-400/20":"bg-purple-50 text-purple-600 border border-purple-200":dm?"bg-white/5 text-gray-400 border border-white/10":"bg-gray-100 text-gray-500"}`}>
+                      <Download className="w-4 h-4"/> SVG {!isPro&&<Zap className="w-3 h-3"/>}
+                    </button>
+                    <button onClick={printQR}  className={ghost}><Printer className="w-4 h-4"/> Print PDF</button>
                     <button onClick={shareQR}  className={ghost}><Share2 className="w-4 h-4"/> Share</button>
                     <button onClick={copyData} className={`col-span-2 ${ghost}`}>{copied?<><Check className="w-4 h-4 text-green-400"/> Copied!</>:<><Copy className="w-4 h-4"/> Copy Data</>}</button>
                   </div>
