@@ -72,21 +72,21 @@ export async function startCheckout() {
 
 // ── New Stripe Checkout (Payment Links approach) ──────────────────────────────
 async function handleNewCheckout(stripe, priceId, user) {
-  // Create a checkout session via Stripe Payment Links
-  // Since we don't have a backend, we redirect to a Stripe-hosted payment link
-  // The payment link must be created in the Stripe dashboard
   const paymentLinkUrl = process.env.REACT_APP_STRIPE_PAYMENT_LINK;
 
   if (paymentLinkUrl) {
-    // Append success/cancel params to payment link
     const url = new URL(paymentLinkUrl);
+    // Pass uid as client_reference_id so Stripe includes it in the redirect
     url.searchParams.set("client_reference_id", user.uid);
     url.searchParams.set("prefilled_email", user.email || "");
+    // Set success redirect with uid embedded
+    url.searchParams.set(
+      "success_url",
+      `${window.location.origin}/?payment=success&uid=${user.uid}`
+    );
     window.location.href = url.toString();
     return { error: null };
   }
-
-  // Fallback: use checkout sessions with redirect
   return await handleLegacyCheckout(stripe, priceId, user);
 }
 
@@ -109,27 +109,38 @@ async function handleLegacyCheckout(stripe, priceId, user) {
 
 // ── Handle payment return ─────────────────────────────────────────────────────
 export async function handlePaymentReturn() {
-  const params  = new URLSearchParams(window.location.search);
-  const payment = params.get("payment");
-  const uid     = params.get("uid");
-  // Also check for Stripe Payment Link return
-  const clientRef = params.get("client_reference_id");
+  const params     = new URLSearchParams(window.location.search);
+  const payment    = params.get("payment");
+  const uid        = params.get("uid");
+  const clientRef  = params.get("client_reference_id");
+  const sessionId  = params.get("session_id");
 
+  // Determine uid from any available source
   const effectiveUid = uid || clientRef || auth.currentUser?.uid;
 
-  if ((payment === "success" || params.get("checkout") === "success") && effectiveUid) {
+  const isSuccess =
+    payment === "success" ||
+    params.get("checkout") === "success" ||
+    (sessionId && effectiveUid);
+
+  if (isSuccess && effectiveUid) {
+    // Clean URL immediately
     window.history.replaceState({}, "", window.location.pathname);
     try {
-      await grantProAccess(effectiveUid, "stripe_checkout");
+      await grantProAccess(effectiveUid, sessionId || "stripe_payment_link");
+      return "success";
     } catch(e) {
-      console.error("Failed to grant Pro:", e);
+      console.error("Failed to grant Pro:", e.message);
+      // Return success anyway — user paid
+      return "success";
     }
-    return "success";
   }
+
   if (payment === "cancelled") {
     window.history.replaceState({}, "", window.location.pathname);
     return "cancelled";
   }
+
   return null;
 }
 
